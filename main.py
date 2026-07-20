@@ -1,16 +1,41 @@
 from datasets import load_dataset
-from sklearn.preprocessing import LabelEncoder
 import numpy as np
 import tensorflow as tf
 import os, pickle
 
-encoder = LabelEncoder()
+label_names = []
+
+def load_label_names():
+    if os.path.isfile("label_encoder.pkl"):
+        with open("label_encoder.pkl", "rb") as f:
+            loaded_labels = pickle.load(f)
+
+        if hasattr(loaded_labels, "classes_"):
+            candidate_labels = list(loaded_labels.classes_)
+        else:
+            candidate_labels = list(loaded_labels)
+
+        if candidate_labels and all(isinstance(label, str) for label in candidate_labels):
+            return candidate_labels
+
+    dataset = load_dataset("MartinThoma/wili_2018")
+    return list(dataset["train"].features["label"].names)
 
 def setup_dataset():
-    dataset = load_dataset("papluca/language-identification")
+    dataset = load_dataset("MartinThoma/wili_2018")
+    print(len(dataset))
     train = dataset["train"]
     test = dataset["test"]
-    val = dataset["validation"]
+
+    global label_names
+    label_names = list(train.features["label"].names)
+
+    if "validation" in dataset:
+        val = dataset["validation"]
+    else:
+        split = train.train_test_split(test_size=0.1, seed=42)
+        train = split["train"]
+        val = split["test"]
 
     return train, test, val
 
@@ -40,7 +65,7 @@ def create_model(vectorizer, verbose=0):
         tf.keras.layers.Dropout(0.5),
 
         tf.keras.layers.Dense(
-            len(encoder.classes_),
+            len(label_names),
             activation="softmax"
         )
     ])
@@ -59,15 +84,15 @@ def create_model(vectorizer, verbose=0):
 def prepare_dataset(verbose=0):
     train, test, val = setup_dataset()
 
-    X_train = list(train["text"])
-    X_test = list(test["text"])
-    X_val = list(val["text"])
-    y_train = encoder.fit_transform(train["labels"])
-    y_val = encoder.transform(val["labels"])
-    y_test = encoder.transform(test["labels"])
+    X_train = list(train["sentence"])
+    X_test = list(test["sentence"])
+    X_val = list(val["sentence"])
+    y_train = np.array(train["label"])
+    y_val = np.array(val["label"])
+    y_test = np.array(test["label"])
 
     with open("label_encoder.pkl", "wb") as f:
-        pickle.dump(encoder, f)
+        pickle.dump(label_names, f)
 
     vectorizer = tf.keras.layers.TextVectorization(
         standardize=None,
@@ -110,8 +135,8 @@ def prepare_dataset(verbose=0):
     )
 
     for i in range(5):
-        print(train["text"][i])
-        print(len(train["text"][i]))
+        print(train["sentence"][i])
+        print(len(train["sentence"][i]))
         print()
 
     return (train_ds, test_ds, val_ds), vectorizer
@@ -132,7 +157,7 @@ def train_model(verbose=0):
     history = model.fit(
         train_ds,
         validation_data=val_ds,
-        epochs=10,
+        epochs=30,
         callbacks=[early_stopping],
         verbose=verbose
     )
@@ -148,25 +173,27 @@ def train_model(verbose=0):
 def predict(model, input, verbose=0):
     prediction = model.predict(tf.constant([input]), verbose=verbose)[0]
 
-    language = encoder.inverse_transform(
-        [prediction.argmax()]
-    )[0]
+    predicted_index = int(prediction.argmax())
+    language = label_names[predicted_index]
 
-    top = prediction.argsort()[-5:][::-1][-5:]
+    top = prediction.argsort()[-5:][::-1]
+    top_labels = [label_names[i] for i in top]
 
     print(f"Input: {input}")
+    print(f"Predicted language: {language} ({prediction[predicted_index]:.4f})")
+    print("Top predictions:")
 
-    for i in top:
-        print(encoder.classes_[i], prediction[i])
+    for label, score in zip(top_labels, prediction[top]):
+        print(f"{label}: {score:.4f}")
     print("---------------------------------------")
     return language, prediction[prediction.argmax()]
 
 if __name__ == "__main__":
+    label_names = load_label_names()
+
     if not os.path.isfile("label_encoder.pkl"):
         model = train_model(verbose=1)
     else:
-        with open("label_encoder.pkl", "rb") as f:
-            encoder = pickle.load(f)
         if not os.path.isfile("language_classifier.keras"):
             model = train_model(verbose=1)
         else:

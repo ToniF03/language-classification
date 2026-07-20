@@ -221,3 +221,7 @@ __marimo__/
 
 # VSCode
 .vscode/
+label_encoder.pkl
+label_encoder.pkl.backup
+language_classifier.keras
+language_classifier.keras.backup
