@@ -203,4 +203,3 @@ if __name__ == "__main__":
     predict(model, "The weather is beautiful today and I would like to go for a walk.")
     predict(model, "Artificial intelligence has changed many aspects of modern computing.")
     predict(model, "I'm here the secrets that you keep")
-    predict(model, "When you are talking in your sleep.")
